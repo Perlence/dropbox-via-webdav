@@ -45,7 +45,7 @@ class DropboxResource(_DAVResource):
         try:
             contents = self.metadata['contents']
         except KeyError:
-            self.metadata = self.client.metadata(self.metadata['path'])
+            self.metadata = self.client.metadata(self.path)
             contents = self.metadata['contents']
         return OrderedDict((basename(content['path']), content)
                            for content in contents)
