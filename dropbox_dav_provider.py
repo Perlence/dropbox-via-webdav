@@ -1,16 +1,12 @@
 from collections import OrderedDict
+from io import BytesIO
 from os.path import basename
-try:
-    import cStringIO as StringIO
-except ImportError:
-    import StringIO as StringIO
 
 import arrow
-from dropbox.client import DropboxClient
+from dropbox.client import DropboxClient, ErrorResponse
 # from dropbox.session import DropboxSession
 from wsgidav.dav_error import DAVError, HTTP_NOT_FOUND
-from wsgidav.dav_provider import DAVProvider, DAVCollection, DAVNonCollection
-from wsgidav import util
+from wsgidav.dav_provider import DAVProvider, _DAVResource
 from wsgidav.util import joinUri
 
 
@@ -18,33 +14,41 @@ class DropboxProvider(DAVProvider):
     def __init__(self, access_token):
         super(DropboxProvider, self).__init__()
         self.client = DropboxClient(access_token)
-        # util.log('DropboxProvider connected to %s' % self.conn)
 
     def getResourceInst(self, path, environ):
         self._count_getResourceInst += 1
-        root = FolderCollection('/', environ)
-        return root.resolve('/', path)
+        try:
+            metadata = self.client.metadata(path)
+        except ErrorResponse as err:
+            if err.status == 404:
+                return
+            raise
+        if metadata.get('is_deleted', False):
+            return None
+        return DropboxResource(path, metadata, environ)
 
 
-class MetadataInfo(object):
+class DropboxResource(_DAVResource):
     date_format = 'ddd, DD MMM YYYY HH:mm:ss Z'
 
-    def getLastModified(self):
-        try:
-            modified = self.metadata['modified']
-        except KeyError:
-            return None
-        return arrow.get(modified, self.date_format).timestamp
-
-
-class FolderCollection(MetadataInfo, DAVCollection):
-    def __init__(self, path, environ):
-        super(FolderCollection, self).__init__(path, environ)
+    def __init__(self, path, metadata, environ):
+        super(DropboxResource, self).__init__(path, metadata['is_dir'],
+                                              environ)
+        self.metadata = metadata
         self.client = self.provider.client
-        self.metadata = self.client.metadata(path)
-        # self.metadata = METADATA
-        self.members = OrderedDict((basename(content['path']), content)
-                                   for content in self.metadata['contents'])
+
+    def supportRanges(self):
+        return False
+
+    @property
+    def members(self):
+        try:
+            contents = self.metadata['contents']
+        except KeyError:
+            self.metadata = self.client.metadata(self.metadata['path'])
+            contents = self.metadata['contents']
+        return OrderedDict((basename(content['path']), content)
+                           for content in contents)
 
     def getMemberNames(self):
         return [key.encode('utf-8') for key in self.members.keys()]
@@ -54,27 +58,55 @@ class FolderCollection(MetadataInfo, DAVCollection):
             member = self.members[name.decode('utf-8')]
         except KeyError:
             raise DAVError(HTTP_NOT_FOUND)
-        if member['is_dir']:
-            return FolderCollection(joinUri(self.path, name), self.environ)
-        else:
-            return FileResource(joinUri(self.path, name), self.environ,
-                                member)
+        return DropboxResource(joinUri(self.path, name), member, self.environ)
 
-
-class FileResource(MetadataInfo, DAVNonCollection):
-    def __init__(self, path, environ, metadata):
-        super(FileResource, self).__init__(path, environ)
-        self.client = self.provider.client
-        self.metadata = metadata
+    def getLastModified(self):
+        try:
+            modified = self.metadata['modified']
+        except KeyError:
+            return None
+        return arrow.get(modified, self.date_format).timestamp
 
     def getContent(self):
-        return self.client.get_file(self.metadata['path'])
+        return self.client.get_file(self.path)
 
     def getContentLength(self):
+        if self.isCollection:
+            return None
         return self.metadata['bytes']
 
     def getContentType(self):
+        if self.isCollection:
+            return None
         return self.metadata['mime_type'].encode('utf-8')
 
-    def getDisplayName(self):
-        return basename(self.metadata['path'])
+    def createCollection(self, name):
+        self.client.file_create_folder(joinUri(self.path, name))
+
+    def createEmptyResource(self, name):
+        assert '/' not in name
+        path = joinUri(self.path, name)
+        self.client.put_file(path, '')
+        return self.provider.getResourceInst(path, self.environ)
+
+    def beginWrite(self, contentType=None):
+        return PutStream(self.client, self.path, overwrite=True)
+
+    def supportRecursiveDelete(self):
+        return True
+
+    def delete(self):
+        self.client.file_delete(self.path)
+
+
+class PutStream(BytesIO):
+    def __init__(self, client, full_path, overwrite=False, parent_rev=None):
+        self.client = client
+        self.full_path = full_path
+        self.overwrite = overwrite
+        self.parent_rev = parent_rev
+
+    def close(self):
+        self.client.put_file(self.full_path, self, self.overwrite,
+                             self.parent_rev)
+        super(PutStream, self).close()
