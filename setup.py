@@ -12,6 +12,11 @@ setup(
     py_modules=['dropbox_dav_provider'],
     include_package_data=True,
     zip_safe=False,
+    install_requires=[
+        'arrow',
+        'dropbox',
+        'WsgiDAV',
+    ],
     classifiers=[
         'Development Status :: 4 - Beta',
         'Environment :: Console',
