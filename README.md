@@ -1,7 +1,7 @@
 Dropbox via WebDAV
 ==================
 
-> Access your Dropbox via WebDAV interface
+*Access your Dropbox via WebDAV interface*
 
 
 Installation
@@ -68,7 +68,7 @@ Serving
 After `config.json` is filled with consumer key, consumer secret, and access tokens, start:
 
 ```bash
-wsgidav
+$ wsgidav
 ```
 
 An HTTP server starts and listens to `http://localhost:8080` (configurable from `wsgidav.conf`).
