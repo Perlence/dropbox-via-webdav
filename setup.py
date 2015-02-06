@@ -12,6 +12,11 @@ setup(
     py_modules=['dropbox_dav_provider'],
     include_package_data=True,
     zip_safe=False,
+    entry_points={
+        'console_scripts': [
+            'get-access-token = get_access_token:main',
+        ],
+    },
     install_requires=[
         'arrow',
         'dropbox',
