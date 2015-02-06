@@ -4,16 +4,17 @@ from os.path import basename
 
 import arrow
 from dropbox.client import DropboxClient, ErrorResponse
-# from dropbox.session import DropboxSession
 from wsgidav.dav_error import DAVError, HTTP_NOT_FOUND, HTTP_INTERNAL_ERROR
 from wsgidav.dav_provider import DAVProvider, _DAVResource
 from wsgidav.util import joinUri
 
+import config  # noqa
+
 
 class DropboxProvider(DAVProvider):
-    def __init__(self, access_token):
+    def __init__(self, accessToken):
         super(DropboxProvider, self).__init__()
-        self.client = DropboxClient(access_token)
+        self.client = DropboxClient(accessToken)
 
     def getResourceInst(self, path, environ):
         self._count_getResourceInst += 1
