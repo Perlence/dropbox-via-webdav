@@ -5,7 +5,7 @@ from os.path import basename
 import arrow
 from dropbox.client import DropboxClient, ErrorResponse
 # from dropbox.session import DropboxSession
-from wsgidav.dav_error import DAVError, HTTP_NOT_FOUND
+from wsgidav.dav_error import DAVError, HTTP_NOT_FOUND, HTTP_INTERNAL_ERROR
 from wsgidav.dav_provider import DAVProvider, _DAVResource
 from wsgidav.util import joinUri
 
@@ -96,7 +96,25 @@ class DropboxResource(_DAVResource):
         return True
 
     def delete(self):
-        self.client.file_delete(self.path)
+        try:
+            self.client.file_delete(self.path)
+        except ErrorResponse:
+            raise DAVError(HTTP_INTERNAL_ERROR)
+
+    def copyMoveSingle(self, destPath, isMove):
+        try:
+            self.client.file_copy(self.path, destPath)
+        except ErrorResponse:
+            raise DAVError(HTTP_INTERNAL_ERROR)
+
+    def supportRecursiveMove(self, destPath):
+        return True
+
+    def moveRecursive(self, destPath):
+        try:
+            self.client.file_move(self.path, destPath)
+        except ErrorResponse:
+            raise DAVError(HTTP_INTERNAL_ERROR)
 
 
 class PutStream(BytesIO):
